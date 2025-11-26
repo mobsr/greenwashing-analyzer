@@ -1,0 +1,10 @@
+# Python Müll
+__pycache__/
+*.pyc
+
+# Virtuelle Umgebung
+venv/
+.env
+
+# Daten (wir laden keine Copyright-geschützten Firmenberichte hoch)
+data/

@@ -1,0 +1,16 @@
+
+
+streamlit>=1.31.0
+plotly>=5.18.0           # Für schöne interaktive Charts
+
+
+
+pandas>=2.2.0
+pymupdf>=1.23.0                    # Solide Basis. Alternativ: pdfplumber (genauer bei Layouts)
+langchain>=0.1.0         # Hilft beim Chunken und LLM Handling
+langchain-community>=0.0.10
+langchain-openai>=0.0.5  # Speziell für OpenAI Anbindung
+
+
+python-dotenv>=1.0.0     # Um den API Key aus der .env Datei zu laden
+tiktoken>=0.6.0          # Um Tokens zu zählen (wichtig für Kostenkontrolle)

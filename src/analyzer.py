@@ -1,10 +1,37 @@
 import os
 import json
 from openai import OpenAI
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 class GreenwashingAnalyzer:
+    """
+    KI-gestützte Analyse von Greenwashing-Indikatoren in Nachhaltigkeitsberichten.
+    
+    Diese Klasse implementiert eine Zwei-Pass-Analyse zur Erkennung von Greenwashing:
+    1. Pass 1: Sequenzielle Analyse zur Erkennung von Risiko-Indikatoren und Claims
+    2. Pass 2: Deep Verification zur dokumentweiten Verifizierung von Claims
+    
+    Attributes:
+        client (OpenAI): OpenAI API Client
+        api_ready (bool): Gibt an, ob die API verfügbar ist
+        model (str): Name des verwendeten LLM-Modells (z.B. "gpt-4o-mini")
+    
+    Example:
+        >>> analyzer = GreenwashingAnalyzer(model_name="gpt-4o-mini")
+        >>> results = analyzer.analyze_report(chunks)
+        >>> print(f"Gefundene Risiken: {len(results['findings'])}")
+    """
+    
     def __init__(self, model_name: str = "gpt-4o-mini"):
+        """
+        Initialisiert den Greenwashing Analyzer.
+        
+        Args:
+            model_name: Name des OpenAI-Modells (Standard: "gpt-4o-mini")
+        
+        Raises:
+            Exception: Falls OpenAI API Key fehlt (wird abgefangen, api_ready=False)
+        """
         try:
             self.client = OpenAI()
             self.api_ready = True
@@ -14,8 +41,36 @@ class GreenwashingAnalyzer:
         self.model = model_name
         print(f"🔧 Analyzer initialisiert mit Modell: {self.model}")
 
-    def analyze_report(self, chunks: List[Dict], progress_callback=None, custom_definitions: Dict[str, str] = None) -> Dict:
-        """Pass 1: Sequenzielle Analyse."""
+    def analyze_report(self, chunks: List[Dict], progress_callback=None, custom_definitions: Optional[Dict[str, str]] = None) -> Dict:
+        """
+        Pass 1: Sequenzielle Analyse des Nachhaltigkeitsberichts.
+        
+        Analysiert jeden Chunk (Seite) sequenziell und extrahiert:
+        - Greenwashing-Risiko-Indikatoren (Findings)
+        - Strategische Nachhaltigkeitsziele (Claims)
+        - Initiale Claim-Verifizierung
+        
+        Args:
+            chunks: Liste von Dokument-Chunks mit Text und Metadaten
+            progress_callback: Optional callback(progress: float, message: str) für Fortschritt
+            custom_definitions: Dictionary mit benutzerdefinierten Tag-Definitionen
+                                Format: {"TAG_NAME": "Definition für KI"}
+        
+        Returns:
+            Dictionary mit Analyse-Ergebnissen:
+            {
+                "findings": List[Dict],  # Risiko-Indikatoren
+                "claim_registry": List[Dict],  # Erkannte Claims
+                "total_chunks": int,  # Anzahl analysierter Chunks
+                "model_used": str,  # Verwendetes Modell
+                "error": str  # Optional: Fehlermeldung bei Problemen
+            }
+        
+        Example:
+            >>> chunks = loader.load()
+            >>> custom_tags = {"VAGUE": "Unspezifische Aussagen ohne Belege"}
+            >>> results = analyzer.analyze_report(chunks, custom_definitions=custom_tags)
+        """
         if not self.api_ready: return {"error": "API Key fehlt."}
 
         findings = []
@@ -96,7 +151,30 @@ class GreenwashingAnalyzer:
         }
 
     def deep_verify_claims(self, chunks: List[Dict], current_claims: List[Dict], progress_callback=None) -> List[Dict]:
-        """Pass 2: Deep Verification."""
+        """
+        Pass 2: Dokumentweite Verifizierung offener Claims.
+        
+        Führt eine tiefgehende Suche nach Belegen für unbestätigte Claims durch:
+        1. Keyword-basiertes Pre-Filtering für Effizienz
+        2. LLM-gestützte Evidenz-Prüfung für relevante Chunks
+        3. Strenges Matching (nur harte Fakten, keine Wiederholungen)
+        
+        Args:
+            chunks: Liste aller Dokument-Chunks
+            current_claims: Liste der zu prüfenden Claims
+            progress_callback: Optional callback(progress: float, message: str)
+        
+        Returns:
+            Aktualisierte Liste der Claims mit verifizierten Status-Updates
+        
+        Note:
+            Ein Claim kann sich nicht selbst belegen (Seite wird ausgeschlossen).
+            Status wird nur auf "POTENTIALLY_VERIFIED" gesetzt bei explizitem Beleg.
+        
+        Example:
+            >>> open_claims = [c for c in claims if c['status'] == 'OPEN']
+            >>> verified = analyzer.deep_verify_claims(chunks, claims)
+        """
         print("🕵️ Starte Pass 2: Deep Verification...")
         open_claims = [c for c in current_claims if c['status'] == 'OPEN']
         if not open_claims: return current_claims
@@ -131,7 +209,29 @@ class GreenwashingAnalyzer:
         if progress_callback: progress_callback(1.0, "Fertig!")
         return current_claims
 
-    def _analyze_single_chunk(self, chunk: Dict, prev_text: str, next_text: str, claims_memory: List[Dict], custom_definitions: Dict[str, str]) -> Dict:
+    def _analyze_single_chunk(self, chunk: Dict, prev_text: str, next_text: str, claims_memory: List[Dict], custom_definitions: Dict[str, str]) -> Optional[Dict]:
+        """
+        Analysiert einen einzelnen Chunk mit Kontext-Awareness.
+        
+        Args:
+            chunk: Aktueller Dokument-Chunk (zu bewerten)
+            prev_text: Text der vorherigen Seite (nur Kontext)
+            next_text: Text der nächsten Seite (nur Kontext)
+            claims_memory: Liste bereits erkannter Claims (Duplikat-Prävention)
+            custom_definitions: Benutzerdefinierte Tag-Definitionen
+        
+        Returns:
+            Dictionary mit Analyse-Ergebnissen oder None bei Fehler:
+            {
+                "findings": List[Dict],  # Neue Risiko-Indikatoren
+                "new_claims": List[Dict],  # Neue strategische Ziele
+                "claim_updates": List[Dict]  # Status-Updates für bestehende Claims
+            }
+        
+        Note:
+            Verwendet structured JSON output für zuverlässiges Parsing.
+            Temperatur=0.0 für deterministische Ergebnisse.
+        """
         tag_definitions_str = "\n".join([f"- {tag}: {definition}" for tag, definition in custom_definitions.items()])
         
         system_prompt = f"""Du bist ein vorsichtiger, wissenschaftlicher Auditor für Nachhaltigkeitsberichte.
@@ -200,8 +300,32 @@ OFFENE ZIELE (für Verifizierung):
             print(f"Analyzer Fehler S.{current_page}: {e}")
             return None
 
-    def _verify_claim_with_llm(self, claim: Dict, text_chunk: str) -> Dict:
-        """Hilfsfunktion für Pass 2: STRENGE PRÜFUNG"""
+    def _verify_claim_with_llm(self, claim: Dict, text_chunk: str) -> Optional[Dict]:
+        """
+        LLM-gestützte Verifizierung eines Claims gegen einen Text-Chunk.
+        
+        Verwendet strenge Prüfkriterien:
+        - Nur harte Fakten (Zahlen, "Abgeschlossen", konkrete Maßnahmen) zählen
+        - Bloße Wiederholungen des Ziels sind kein Beleg
+        - Vage Aussagen ("Fortschritte gemacht") sind kein Beleg
+        
+        Args:
+            claim: Claim-Dictionary mit 'text' und 'context'
+            text_chunk: Potenzieller Beleg-Text (max 1500 Zeichen)
+        
+        Returns:
+            Dictionary mit Verifizierungsergebnis oder None bei Fehler:
+            {
+                "is_evidence": bool,  # True nur bei zweifelsfrei harten Belegen
+                "reason": str  # Kurze Begründung
+            }
+        
+        Example:
+            >>> claim = {"text": "Wir werden CO2-neutral bis 2030", "context": "..."}
+            >>> result = analyzer._verify_claim_with_llm(claim, chunk_text)
+            >>> if result and result.get('is_evidence'):
+            ...     print("Beleg gefunden!")
+        """
         try:
             prompt = f"""
             STRENGE FAKTEN-PRÜFUNG

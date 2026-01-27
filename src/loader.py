@@ -3,7 +3,7 @@ import base64
 import os
 import json
 import hashlib
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Optional
 from openai import OpenAI, RateLimitError
 from langchain_text_splitters import MarkdownTextSplitter
 import asyncio
@@ -16,7 +16,45 @@ except ImportError:
     pymupdf4llm = None
 
 class ReportLoader:
+    """
+    Hybride PDF-Extraktion mit Text- und Vision-Analyse.
+    
+    Diese Klasse verarbeitet PDF-Nachhaltigkeitsberichte und extrahiert:
+    - Text-Inhalte via PyMuPDF4LLM (Markdown-basiert)
+    - Visuelle Inhalte via OpenAI Vision API (Tabellen, Diagramme, Bilder)
+    - Caching für Performance-Optimierung
+    - Highlighting-Funktion für visuelle Belege
+    
+    Attributes:
+        file_path (str): Pfad zur PDF-Datei
+        max_pages (int): Maximale Anzahl zu verarbeitender Seiten
+        base_name (str): Dateiname ohne Extension
+        cache_dir (str): Verzeichnis für gecachte Daten
+        images_dir (str): Verzeichnis für Seitenbilder
+        highlights_dir (str): Verzeichnis für Highlight-Bilder
+        client (OpenAI): OpenAI API Client
+        api_ready (bool): Status der API-Verfügbarkeit
+        model (str): Vision-Modell (z.B. "gpt-4o")
+        text_splitter (MarkdownTextSplitter): Text-Chunking-Tool
+    
+    Example:
+        >>> loader = ReportLoader("report.pdf", max_pages=10, vision_model="gpt-4o")
+        >>> chunks = loader.load(use_cache=True)
+        >>> print(f"Extrahierte {len(chunks)} Seiten")
+    """
+    
     def __init__(self, file_path: str, max_pages: int = 5, vision_model: str = "gpt-4o"):
+        """
+        Initialisiert den Report Loader.
+        
+        Args:
+            file_path: Pfad zur PDF-Datei
+            max_pages: Maximale Anzahl zu verarbeitender Seiten (Standard: 5)
+            vision_model: OpenAI Vision-Modell (Standard: "gpt-4o")
+        
+        Raises:
+            Exception: Bei fehlendem OpenAI API Key (wird abgefangen, api_ready=False)
+        """
         self.file_path = file_path
         self.max_pages = max_pages
         
@@ -39,10 +77,31 @@ class ReportLoader:
         self.model = vision_model
         self.text_splitter = MarkdownTextSplitter(chunk_size=1500, chunk_overlap=200)
 
-    def get_highlighted_image(self, page_num: int, quote: str) -> str:
+    def get_highlighted_image(self, page_num: int, quote: str) -> Optional[str]:
         """
         Erstellt ein Bild der Seite mit gelben Markierungen für das Zitat.
-        Nutzt 'Anchor-Cluster'-Suche für Robustheit.
+        
+        Verwendet robuste "Anchor-Cluster"-Suche zur Überbrückung von Zeilenumbrüchen:
+        1. Zerlegt Zitat in 3-Wort-Schnipsel (N-Grams)
+        2. Sucht und markiert alle gefundenen Schnipsel
+        3. Fallback: Normalisierter Gesamt-Satz bei Fehlschlag
+        
+        Args:
+            page_num: Seitennummer (1-basiert)
+            quote: Zu markierender Text (Zitat aus dem Dokument)
+        
+        Returns:
+            Pfad zum Highlight-Bild oder None bei Fehler/nicht gefunden
+        
+        Note:
+            Verwendet MD5-Hash für Dateinamen-Caching (8 Zeichen).
+            Bereits erstellte Highlights werden wiederverwendet.
+        
+        Example:
+            >>> loader = ReportLoader("report.pdf")
+            >>> img_path = loader.get_highlighted_image(5, "Wir reduzieren CO2")
+            >>> if img_path:
+            ...     st.image(img_path)
         """
         # Hash für Dateinamen (Caching der Highlights)
         quote_hash = hashlib.md5(quote.encode()).hexdigest()[:8]
@@ -102,7 +161,32 @@ class ReportLoader:
             print(f"Highlight Error: {e}")
             return None
 
-    def _get_visual_description(self, base64_image):
+    def _get_visual_description(self, base64_image: str) -> str:
+        """
+        Extrahiert visuelle Daten aus einem Bild via OpenAI Vision API.
+        
+        Prompt optimiert für Nachhaltigkeitsberichte:
+        1. DATEN: Transkription von Tabellen/Diagrammen
+        2. VISUELL: Beschreibung von Motiven, Farben
+        3. LABELS: Erkennung von Zertifikaten/Siegeln
+        
+        Args:
+            base64_image: Base64-kodiertes PNG-Bild
+        
+        Returns:
+            Formatierter String mit visuellen Daten oder "" bei Fehler/irrelevant
+            Format: "\\n--- [VISUELLE DATEN (KI)] ---\\n{content}\\n"
+        
+        Note:
+            - Verwendet 3 Retry-Versuche bei Rate Limits
+            - Returnt "" wenn nur Text (keine relevanten Daten)
+            - Max 600 Tokens pro Vision-Request
+        
+        Example:
+            >>> description = loader._get_visual_description(img_base64)
+            >>> if description:
+            ...     print("Vision-Daten gefunden!")
+        """
         # ... (Unverändert, siehe vorheriger Code) ...
         if not self.client: return ""
         for attempt in range(3):
@@ -123,6 +207,44 @@ class ReportLoader:
         return ""
 
     def load(self, use_cache: bool = True, progress_callback: Callable = None) -> List[Dict]:
+        """
+        Hauptfunktion: Lädt und verarbeitet das PDF mit hybrider Extraktion.
+        
+        Workflow:
+        1. Cache-Check (falls use_cache=True)
+        2. Layout-Analyse mit PyMuPDF4LLM
+        3. Bild-Extraktion für alle Seiten
+        4. Parallele Vision-Analyse (max 2 Worker)
+        5. Chunk-Erstellung und Caching
+        
+        Args:
+            use_cache: Cache-Daten verwenden falls vorhanden (Standard: True)
+            progress_callback: Optional callback(progress: float, message: str)
+        
+        Returns:
+            Liste von Chunk-Dictionaries:
+            [
+                {
+                    "text": "Seiten-Text + Vision-Daten",
+                    "metadata": {
+                        "page": 1,
+                        "source": "report.pdf",
+                        "len": 1234,
+                        "image_path": "/path/to/page_1.png"
+                    }
+                },
+                ...
+            ]
+        
+        Note:
+            - Verwendet ThreadPoolExecutor für parallele Vision-Calls
+            - Max 2 Worker zur Vermeidung von Rate Limits
+            - Seitenlimit wird via max_pages in __init__ gesetzt
+        
+        Example:
+            >>> loader = ReportLoader("report.pdf", max_pages=20)
+            >>> chunks = loader.load(use_cache=True, progress_callback=my_callback)
+        """
         # ... (Unverändert, siehe vorheriger Code) ...
         if use_cache and os.path.exists(self.json_path):
             if progress_callback: progress_callback(1.0, "Daten aus Cache geladen!")
@@ -196,7 +318,22 @@ class ReportLoader:
         return final_chunks
 
     def _process_page_vision(self, img_data: Dict) -> str:
-        """Wrapper for parallel execution"""
+        """
+        Wrapper für parallele Vision-Verarbeitung.
+        
+        Fügt Verzögerungen hinzu zur Rate-Limit-Vermeidung und behandelt Fehler.
+        
+        Args:
+            img_data: Dictionary mit 'base64', 'page_num', etc.
+        
+        Returns:
+            Vision-Beschreibung oder "" bei Fehler
+        
+        Note:
+            - 0.5s Delay vor jedem Request (Rate Limit Schutz)
+            - 2s Retry-Delay bei RateLimitError
+            - Graceful degradation bei Fehlern (keine Exception)
+        """
         if not self.api_ready:
             return ""
         

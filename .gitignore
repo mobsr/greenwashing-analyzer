@@ -5,3 +5,23 @@ data/raw/*
 data/processed/*
 *.pyc
 .DS_Store
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.log
+evaluation_log.csv

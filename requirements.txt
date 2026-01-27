@@ -17,3 +17,10 @@ langchain-text-splitters>=0.0.1
 
 python-dotenv>=1.0.0     # Um den API Key aus der .env Datei zu laden
 tiktoken>=0.6.0          # Um Tokens zu zählen (wichtig für Kostenkontrolle)
+
+# Development Dependencies
+pytest>=7.4.0            # Testing Framework
+pytest-cov>=4.1.0        # Code Coverage
+black>=23.0.0            # Code Formatter
+flake8>=6.0.0            # Linter
+mypy>=1.5.0              # Type Checker

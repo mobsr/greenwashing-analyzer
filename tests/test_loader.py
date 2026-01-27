@@ -143,10 +143,8 @@ class TestGetVisualDescription:
             result = loader._get_visual_description("base64data")
             assert result == ""
     
-    def test_visual_description_rate_limit_retry(self, temp_pdf_path):
+    def test_visual_description_rate_limit_retry(self, temp_pdf_path, mock_rate_limit_error):
         """Test _get_visual_description retries on rate limit."""
-        from openai import RateLimitError
-        
         mock_client = MagicMock()
         mock_response = MagicMock()
         mock_choice = MagicMock()
@@ -154,15 +152,8 @@ class TestGetVisualDescription:
         mock_response.choices = [mock_choice]
         
         # First call raises RateLimitError, second succeeds
-        # Create RateLimitError with required 'message' parameter
-        rate_limit_error = RateLimitError(
-            message="Rate limit exceeded",
-            response=MagicMock(status_code=429),
-            body=None
-        )
-        
         mock_client.chat.completions.create.side_effect = [
-            rate_limit_error,
+            mock_rate_limit_error,
             mock_response
         ]
         
@@ -285,17 +276,9 @@ class TestProcessPageVision:
                 # Should have delay for rate limiting
                 assert isinstance(result, str)
     
-    def test_process_page_vision_rate_limit_retry(self, temp_pdf_path):
+    def test_process_page_vision_rate_limit_retry(self, temp_pdf_path, mock_rate_limit_error):
         """Test _process_page_vision retries on rate limit."""
-        from openai import RateLimitError
-        
         mock_client = MagicMock()
-        # Create RateLimitError with required 'message' parameter
-        rate_limit_error = RateLimitError(
-            message="Rate limit exceeded",
-            response=MagicMock(status_code=429),
-            body=None
-        )
         
         # Mock _get_visual_description to raise then succeed
         with patch('src.loader.OpenAI', return_value=mock_client):
@@ -304,7 +287,7 @@ class TestProcessPageVision:
                 
                 # Mock the _get_visual_description method
                 with patch.object(loader, '_get_visual_description', side_effect=[
-                    rate_limit_error,
+                    mock_rate_limit_error,
                     "Success"
                 ]):
                     img_data = {'page_num': 1, 'base64': 'data', 'text_content': '', 'img_path': ''}

@@ -226,8 +226,8 @@ with tab1:
                 with c2:
                     st.markdown("### Original Seite")
                     img_path = chunk['metadata'].get('image_path')
-                    # FIX BUG 3: Better validation of image path
-                    if img_path and os.path.isfile(img_path) and os.path.exists(img_path):
+                    # FIX BUG 3: Validate image path is a valid file
+                    if img_path and os.path.isfile(img_path):
                         st.image(img_path, use_container_width=True)
                     else:
                         st.warning("Kein Bild verfügbar.")

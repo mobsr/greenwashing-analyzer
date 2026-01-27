@@ -121,3 +121,16 @@ def setup_env_vars(monkeypatch):
 def mock_progress_callback():
     """Mock progress callback for testing."""
     return Mock()
+
+
+@pytest.fixture
+def mock_rate_limit_error():
+    """Mock RateLimitError for testing retry logic."""
+    from openai import RateLimitError
+    
+    # Create RateLimitError with required parameters
+    return RateLimitError(
+        message="Rate limit exceeded",
+        response=MagicMock(status_code=429),
+        body=None
+    )

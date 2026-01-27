@@ -132,6 +132,10 @@ class GreenwashingAnalyzer:
         return current_claims
 
     def _analyze_single_chunk(self, chunk: Dict, prev_text: str, next_text: str, claims_memory: List[Dict], custom_definitions: Dict[str, str]) -> Dict:
+        if not self.api_ready:
+            print(f"❌ API nicht verfügbar für Seite {chunk['metadata']['page']}")
+            return None
+            
         tag_definitions_str = "\n".join([f"- {tag}: {definition}" for tag, definition in custom_definitions.items()])
         
         system_prompt = f"""Du bist ein wissenschaftlicher Greenwashing-Auditor für Nachhaltigkeitsberichte.
@@ -196,12 +200,18 @@ OFFENE ZIELE (für Verifizierung):
                 timeout=30
             )
             return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON Parsing-Fehler S.{current_page}: {e}")
+            return None
         except Exception as e:
-            print(f"Analyzer Fehler S.{current_page}: {e}")
+            print(f"❌ Analyzer Fehler S.{current_page}: {type(e).__name__}: {str(e)}")
             return None
 
     def _verify_claim_with_llm(self, claim: Dict, text_chunk: str) -> Dict:
         """Hilfsfunktion für Pass 2: STRENGE PRÜFUNG"""
+        if not self.api_ready:
+            return None
+            
         try:
             prompt = f"""
             STRENGE FAKTEN-PRÜFUNG
@@ -230,4 +240,9 @@ OFFENE ZIELE (für Verifizierung):
                 response_format={"type": "json_object"}, temperature=0.0
             )
             return json.loads(response.choices[0].message.content)
-        except Exception: return None
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON Parsing-Fehler in Claim-Verifizierung: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Fehler in Claim-Verifizierung: {type(e).__name__}: {str(e)}")
+            return None

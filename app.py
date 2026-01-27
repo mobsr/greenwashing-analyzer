@@ -15,10 +15,24 @@ st.set_page_config(page_title="Greenwashing Analyzer - Muhammad Baschir", page_i
 
 
 def _init_api_key():
-    # Prefer Streamlit secrets, fall back to env for local dev
-    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
+    """Initialize API key from Streamlit secrets or environment."""
+    try:
+        # Try Streamlit secrets first (production)
+        if hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENAI_API_KEY"]
+        else:
+            # Fall back to environment variable (local dev)
+            api_key = os.getenv("OPENAI_API_KEY")
+        
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+            return True
+        else:
+            st.error("❌ OpenAI API-Schlüssel nicht gefunden. Bitte in Streamlit Cloud unter 'Secrets' hinzufügen oder lokal .env konfigurieren.")
+            return False
+    except Exception as e:
+        st.error(f"❌ Fehler beim Laden des API-Schlüssels: {str(e)}")
+        return False
 
 
 # def _require_auth():
@@ -39,7 +53,11 @@ def _init_api_key():
 #                 st.error("Incorrect password")
 #         st.stop()
 
-_init_api_key()
+# Initialize API key before anything else
+if 'api_key_initialized' not in st.session_state:
+    st.session_state.api_key_initialized = _init_api_key()
+    if not st.session_state.api_key_initialized:
+        st.stop()
 
 if 'auth_ok' not in st.session_state: st.session_state.auth_ok = False
 if 'chunks' not in st.session_state: st.session_state.chunks = []

@@ -5,7 +5,7 @@ Diese Tests validieren die Kernfunktionalität der Analyse-Logik.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from src.analyzer import GreenwashingAnalyzer
 
 

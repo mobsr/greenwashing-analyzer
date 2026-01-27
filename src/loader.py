@@ -6,7 +6,6 @@ import hashlib
 from typing import List, Dict, Callable, Optional
 from openai import OpenAI, RateLimitError
 from langchain_text_splitters import MarkdownTextSplitter
-import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .logger_config import setup_logger

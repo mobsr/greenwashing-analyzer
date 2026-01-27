@@ -2,6 +2,9 @@ import os
 import json
 from openai import OpenAI
 from typing import List, Dict, Optional
+from .logger_config import setup_logger
+
+logger = setup_logger("analyzer")
 
 class GreenwashingAnalyzer:
     """
@@ -39,7 +42,7 @@ class GreenwashingAnalyzer:
             self.client = None
             self.api_ready = False
         self.model = model_name
-        print(f"🔧 Analyzer initialisiert mit Modell: {self.model}")
+        logger.info(f"Analyzer initialisiert mit Modell: {self.model}")
 
     def analyze_report(self, chunks: List[Dict], progress_callback=None, custom_definitions: Optional[Dict[str, str]] = None) -> Dict:
         """
@@ -82,7 +85,7 @@ class GreenwashingAnalyzer:
         total_chunks = len(chunks)
         total_ops = total_chunks
         current_op = 0
-        print(f"🕵️ Starte Pass 1 ({self.model})...")
+        logger.info(f"Starte Pass 1 mit {self.model} ({total_chunks} Chunks)...")
 
         failed_pages = []
         for i, chunk in enumerate(chunks):
@@ -97,6 +100,7 @@ class GreenwashingAnalyzer:
             
             if result is None:
                 failed_pages.append(chunk['metadata']['page'])
+                logger.warning(f"Analyse-Fehler auf Seite {chunk['metadata']['page']}")
             elif result:
                 if result.get("findings"):
                     for f in result["findings"]:
@@ -135,8 +139,10 @@ class GreenwashingAnalyzer:
                                 claim["evidence"] = f"Seite {chunk['metadata']['page']}: {update.get('reason')}"
 
         if progress_callback: progress_callback(1.0, "Pass 1 Fertig!")
+        logger.info(f"Pass 1 abgeschlossen: {len(findings)} Findings, {len(claims_memory)} Claims")
         
         if failed_pages:
+            logger.error(f"API-Fehler auf {len(failed_pages)} Seiten: {failed_pages}")
             return {
                 "findings": findings,
                 "claim_registry": claims_memory,
@@ -175,7 +181,7 @@ class GreenwashingAnalyzer:
             >>> open_claims = [c for c in claims if c['status'] == 'OPEN']
             >>> verified = analyzer.deep_verify_claims(chunks, claims)
         """
-        print("🕵️ Starte Pass 2: Deep Verification...")
+        logger.info("Starte Pass 2: Deep Verification...")
         open_claims = [c for c in current_claims if c['status'] == 'OPEN']
         if not open_claims: return current_claims
 
@@ -297,7 +303,7 @@ OFFENE ZIELE (für Verifizierung):
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
-            print(f"Analyzer Fehler S.{current_page}: {e}")
+            logger.error(f"Analyzer Fehler Seite {current_page}: {str(e)}")
             return None
 
     def _verify_claim_with_llm(self, claim: Dict, text_chunk: str) -> Optional[Dict]:

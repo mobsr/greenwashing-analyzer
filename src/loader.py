@@ -9,6 +9,9 @@ from langchain_text_splitters import MarkdownTextSplitter
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .logger_config import setup_logger
+
+logger = setup_logger("loader")
 
 try:
     import pymupdf4llm
@@ -158,7 +161,7 @@ class ReportLoader:
             return img_path
             
         except Exception as e:
-            print(f"Highlight Error: {e}")
+            logger.error(f"Highlight-Fehler auf Seite {page_num}: {str(e)}")
             return None
 
     def _get_visual_description(self, base64_image: str) -> str:
@@ -247,10 +250,11 @@ class ReportLoader:
         """
         # ... (Unverändert, siehe vorheriger Code) ...
         if use_cache and os.path.exists(self.json_path):
+            logger.info(f"Lade gecachte Daten für: {self.base_name}")
             if progress_callback: progress_callback(1.0, "Daten aus Cache geladen!")
             with open(self.json_path, "r", encoding="utf-8") as f: return json.load(f)
 
-        print(f"🚀 Starte Processing für: {self.base_name}")
+        logger.info(f"Starte PDF-Processing für: {self.base_name} (max {self.max_pages} Seiten)")
         if progress_callback: progress_callback(0.1, "Layout-Analyse...")
         try: md_pages = pymupdf4llm.to_markdown(self.file_path, page_chunks=True)
         except Exception: md_pages = []
@@ -298,7 +302,7 @@ class ReportLoader:
                             f"Seite {images_data[idx]['page_num']}: Vision verarbeitet"
                         )
                 except Exception as e:
-                    print(f"Vision API Error for page {idx + 1}: {e}")
+                    logger.error(f"Vision API Error für Seite {idx + 1}: {str(e)}")
                     # Continue without vision for this page
         
         # Build chunks
@@ -314,6 +318,7 @@ class ReportLoader:
                     }
                 })
         with open(self.json_path, "w", encoding="utf-8") as f: json.dump(final_chunks, f, ensure_ascii=False, indent=2)
+        logger.info(f"Processing abgeschlossen: {len(final_chunks)} Chunks erstellt")
         if progress_callback: progress_callback(1.0, "Fertig!")
         return final_chunks
 
@@ -345,5 +350,5 @@ class ReportLoader:
             time.sleep(2)
             return self._get_visual_description(img_data['base64'])
         except Exception as e:
-            print(f"Vision error: {e}")
+            logger.error(f"Vision-Fehler: {str(e)}")
             return ""

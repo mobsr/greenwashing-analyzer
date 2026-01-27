@@ -21,65 +21,23 @@ def _init_api_key():
         os.environ["OPENAI_API_KEY"] = api_key
 
 
-def _require_auth():
-    if st.session_state.get("auth_ok"):
-        return
-
-    stored_hash = st.secrets.get("APP_PASSWORD_HASH")
-    plain_pw = st.secrets.get("APP_PASSWORD")
-    expected_hash = stored_hash or (hashlib.sha256(plain_pw.encode()).hexdigest() if plain_pw else None)
-
-    if not expected_hash:
-        st.error("Bitte APP_PASSWORD_HASH oder APP_PASSWORD in den Streamlit Secrets setzen.")
-        st.stop()
-
-    st.title("Greenwashing Analyzer")
-    st.info("Zugang geschützt. Bitte Passwort eingeben.")
-    pw_input = st.text_input("Passwort", type="password")
-    if st.button("Anmelden"):
-        if hashlib.sha256(pw_input.encode()).hexdigest() == expected_hash:
-            st.session_state.auth_ok = True
-            st.rerun()
-        else:
-            st.error("Falsches Passwort.")
-    st.stop()
-
-# CSS mit Dark Mode Support
-st.markdown("""<style>
-.chunk-card{
-    background-color: var(--background-color);
-    border: 1px solid var(--secondary-background-color);
-    border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 20px;
-}
-.vision-block{
-    background-color: rgba(255, 179, 0, 0.15);
-    border-left: 5px solid #ffb300;
-    padding: 15px;
-    margin-top: 15px;
-}
-.meta-tag{
-    background-color: var(--secondary-background-color);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.8em;
-    margin-right: 10px;
-}
-.finding-card{
-    background-color: rgba(255, 68, 68, 0.1);
-    border-left: 5px solid #ff4444;
-    padding: 15px;
-    margin-bottom: 10px;
-}
-.claim-card{
-    background-color: rgba(0, 123, 255, 0.1);
-    border-left: 5px solid #007bff;
-    padding: 10px;
-    margin-bottom: 5px;
-    font-size: 0.9em;
-}
-</style>""", unsafe_allow_html=True)
+# def _require_auth():
+#     """Simple password protection for the app."""
+#     if "authenticated" not in st.session_state:
+#         st.session_state.authenticated = False
+#     
+#     if not st.session_state.authenticated:
+#         st.title("🔐 Authentication Required")
+#         password = st.text_input("Enter password:", type="password")
+#         
+#         if st.button("Login"):
+#             stored_hash = st.secrets.get("APP_PASSWORD_HASH")
+#             if stored_hash and bcrypt.checkpw(password.encode(), stored_hash.encode()):
+#                 st.session_state.authenticated = True
+#                 st.rerun()
+#             else:
+#                 st.error("Incorrect password")
+#         st.stop()
 
 _init_api_key()
 
@@ -95,7 +53,7 @@ if 'custom_tags' not in st.session_state:
         {"tag": "DATA_GAP", "definition": "Wenn eine Zahl genannt wird (z.B. '-50% CO2'), aber keine Quelle oder Basisjahr angegeben ist -> 'Hinweis auf fehlende Datenquelle'."}
     ]
 
-_require_auth()
+# _require_auth()
 
 st.title("Greenwashing Analyzer")
 

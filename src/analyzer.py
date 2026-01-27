@@ -134,14 +134,14 @@ class GreenwashingAnalyzer:
     def _analyze_single_chunk(self, chunk: Dict, prev_text: str, next_text: str, claims_memory: List[Dict], custom_definitions: Dict[str, str]) -> Dict:
         tag_definitions_str = "\n".join([f"- {tag}: {definition}" for tag, definition in custom_definitions.items()])
         
-        system_prompt = f"""Du bist ein vorsichtiger, wissenschaftlicher Auditor für Nachhaltigkeitsberichte.
+        system_prompt = f"""Du bist ein wissenschaftlicher Greenwashing-Auditor für Nachhaltigkeitsberichte.
 Deine Sprache ist rein deskriptiv ("Indiz", "Hinweis", "Potenziell"). Vermeide absolute Urteile.
 
 WICHTIG: Du bewertest NUR die Seite in 'AKTUELLE SEITE (ZU BEWERTEN)'.
 Die Kontextseiten dienen nur zum Verständnis von Satzübergängen – extrahiere dort KEINE Findings/Claims!
 
 AUFGABEN:
-1. RISIKO-INDIKATOREN (Findings) - Nutze exakt diese Definitionen:
+1. RISIKO-INDIKATOREN (Findings) - Nutze exakt diese Definitionen, beachte dabei den semantischen Kontext. Begründe deine Auswahl:
 {tag_definitions_str}
    → NUR aus 'AKTUELLE SEITE (ZU BEWERTEN)' extrahieren!
 
@@ -211,7 +211,7 @@ OFFENE ZIELE (für Verifizierung):
             Hintergrund-Kontext: "{claim.get('context','')}"
             
             Möglicher Beleg-Text:
-            "{text_chunk[:1500]}..."
+            "{text_chunk}"
             
             DEINE AUFGABE:
             Entscheide, ob der 'Möglicher Beleg-Text' zweifelsfrei beweist, dass die 'Behauptung' umgesetzt wurde oder konkrete Maßnahmen/Daten dazu nennt.

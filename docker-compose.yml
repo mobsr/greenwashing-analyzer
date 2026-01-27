@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  greenwashing-analyzer:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env  # Lädt den API Key automatisch aus deiner .env Datei
+    volumes:
+      # Optional: Verbindet den lokalen Code mit dem Container
+      # Nützlich, wenn der Betreuer Änderungen machen will, ohne neu zu bauen
+      - ./:/app
+    restart: on-failure

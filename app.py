@@ -49,7 +49,7 @@ if 'custom_tags' not in st.session_state:
     # Default Tags
     st.session_state.custom_tags = [
         {"tag": "VAGUE", "definition": "Nutze dieses Label für unspezifische Begriffe wie 'umweltfreundlich', 'grün', 'wir engagieren uns', wenn KEINE konkreten Maßnahmen oder Zahlen genannt werden."},
-        {"tag": "INCONSISTENCY", "definition": "Achte auf Widersprüche zwischen Bild (siehe '📸 Visuelle Erfassung') und Text. Beispiel: Bild zeigt Natur, Text spricht von Schwerindustrie."},
+        {"tag": "INCONSISTENCY", "definition": "Achte auf Widersprüche zwischen Bild (siehe 'Visuelle Erfassung') und Text. Beispiel: Bild zeigt Natur, Text spricht von Schwerindustrie."},
         {"tag": "DATA_GAP", "definition": "Wenn eine Zahl genannt wird (z.B. '-50% CO2'), aber keine Quelle oder Basisjahr angegeben ist -> 'Hinweis auf fehlende Datenquelle'."}
     ]
 
@@ -195,7 +195,7 @@ with tab2:
         if st.session_state.audit_results is None:
             st.write("Konfiguration & Start")
             col_m1, col_m2 = st.columns(2)
-            with col_m1: model_choice = st.selectbox("KI-Modell:", ["gpt-4o-mini", "gpt-4o"])
+            with col_m1: model_choice = st.selectbox("KI-Modell:", ["gpt-4o-mini", "gpt-4o", "gpt-5.2"])
             with col_m2: 
                 active_tags = ", ".join([t["tag"] for t in st.session_state.custom_tags if t["tag"]])
                 st.info(f"Modell: **{model_choice}**\n\nAktive Indikator-Tags: {active_tags if active_tags else 'Keine'}")

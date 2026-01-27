@@ -35,23 +35,31 @@ def _init_api_key():
         return False
 
 
-# def _require_auth():
-#     """Simple password protection for the app."""
-#     if "authenticated" not in st.session_state:
-#         st.session_state.authenticated = False
-#     
-#     if not st.session_state.authenticated:
-#         st.title("🔐 Authentication Required")
-#         password = st.text_input("Enter password:", type="password")
-#         
-#         if st.button("Login"):
-#             stored_hash = st.secrets.get("APP_PASSWORD_HASH")
-#             if stored_hash and bcrypt.checkpw(password.encode(), stored_hash.encode()):
-#                 st.session_state.authenticated = True
-#                 st.rerun()
-#             else:
-#                 st.error("Incorrect password")
-#         st.stop()
+def _require_auth():
+    """Simple password protection for the app."""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    
+    if not st.session_state.authenticated:
+        st.title("🔐 Authentifizierung erforderlich")
+        password = st.text_input("Passwort eingeben:", type="password")
+        
+        if st.button("Login"):
+            # Try Streamlit secrets first (production), then env variable (local)
+            try:
+                if hasattr(st, 'secrets') and "APP_PASSWORD" in st.secrets:
+                    stored_password = st.secrets["APP_PASSWORD"]
+                else:
+                    stored_password = os.getenv("APP_PASSWORD")
+            except:
+                stored_password = os.getenv("APP_PASSWORD")
+            
+            if stored_password and password == stored_password:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("❌ Falsches Passwort")
+        st.stop()
 
 # Initialize API key before anything else
 if 'api_key_initialized' not in st.session_state:
@@ -71,7 +79,7 @@ if 'custom_tags' not in st.session_state:
         {"tag": "DATA_GAP", "definition": "Wenn eine Zahl genannt wird (z.B. '-50% CO2'), aber keine Quelle oder Basisjahr angegeben ist -> 'Hinweis auf fehlende Datenquelle'."}
     ]
 
-# _require_auth()
+_require_auth()
 
 st.title("Greenwashing Analyzer")
 

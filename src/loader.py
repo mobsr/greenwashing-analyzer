@@ -3,10 +3,9 @@ import base64
 import os
 import json
 import hashlib
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Optional
 from openai import OpenAI, RateLimitError
 from langchain_text_splitters import MarkdownTextSplitter
-import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -16,7 +15,36 @@ except ImportError:
     pymupdf4llm = None
 
 class ReportLoader:
+    """
+    Hybrid PDF Loader mit Text- und Vision-Extraktion.
+    
+    Verarbeitet PDF-Dokumente und extrahiert sowohl textuellen Inhalt (via pymupdf4llm)
+    als auch visuelle Informationen (via GPT-4o Vision API). Unterstützt Caching
+    und parallele Verarbeitung für Performance.
+    
+    Attributes:
+        file_path: Pfad zur PDF-Datei
+        max_pages: Maximum Anzahl zu verarbeitender Seiten
+        model: OpenAI Vision-Modell Name (z.B. "gpt-4o")
+        client: OpenAI API Client
+        api_ready: Status der API-Verbindung
+        cache_dir: Verzeichnis für gecachte Daten
+        images_dir: Verzeichnis für extrahierte Seitenbilder
+        highlights_dir: Verzeichnis für Highlight-Bilder
+    """
+    
     def __init__(self, file_path: str, max_pages: int = 5, vision_model: str = "gpt-4o"):
+        """
+        Initialisiert den Report Loader.
+        
+        Args:
+            file_path: Pfad zur PDF-Datei
+            max_pages: Maximum Anzahl zu verarbeitender Seiten (default: 5)
+            vision_model: OpenAI Vision-Modell (default: "gpt-4o")
+        
+        Note:
+            Erstellt automatisch Cache-Verzeichnisse unter data/processed/
+        """
         self.file_path = file_path
         self.max_pages = max_pages
         
@@ -39,10 +67,31 @@ class ReportLoader:
         self.model = vision_model
         self.text_splitter = MarkdownTextSplitter(chunk_size=1500, chunk_overlap=200)
 
-    def get_highlighted_image(self, page_num: int, quote: str) -> str:
+    def get_highlighted_image(self, page_num: int, quote: str) -> Optional[str]:
         """
-        Erstellt ein Bild der Seite mit gelben Markierungen für das Zitat.
-        Nutzt 'Anchor-Cluster'-Suche für Robustheit.
+        Erstellt ein Bild der Seite mit gelben Markierungen für ein Zitat.
+        
+        Verwendet 'Anchor-Cluster'-Suche für robustes Text-Matching:
+        - Zerlegt lange Zitate in 3-Wort-Snippets (N-Grams)
+        - Sucht jeden Snippet separat (überbrückt Zeilenumbrüche)
+        - Markiert alle gefundenen Stellen gelb
+        
+        Args:
+            page_num: Seitennummer (1-basiert)
+            quote: Zu markierender Text-Ausschnitt
+        
+        Returns:
+            Pfad zum generierten Highlight-Bild oder None bei Fehler
+        
+        Note:
+            - Verwendet MD5-Hash des Quotes für Caching
+            - Fallback: Normalisierter Full-Text-Search bei N-Gram-Fehler
+        
+        Example:
+            >>> loader = ReportLoader("report.pdf")
+            >>> img_path = loader.get_highlighted_image(5, "CO2 Reduktion um 50%")
+            >>> if img_path:
+            ...     st.image(img_path)
         """
         # Hash für Dateinamen (Caching der Highlights)
         quote_hash = hashlib.md5(quote.encode()).hexdigest()[:8]
@@ -102,8 +151,26 @@ class ReportLoader:
             print(f"Highlight Error: {e}")
             return None
 
-    def _get_visual_description(self, base64_image):
-        # ... (Unverändert, siehe vorheriger Code) ...
+    def _get_visual_description(self, base64_image: str) -> str:
+        """
+        Extrahiert visuelle Informationen aus einem Seitenbild via Vision API.
+        
+        Verwendet GPT-4o Vision zur Analyse von:
+        - Tabellen und Diagrammen (Daten-Transkription)
+        - Visuellen Motiven, Farben
+        - Zertifikaten und Labels
+        
+        Args:
+            base64_image: Base64-encodiertes PNG-Bild
+        
+        Returns:
+            Formatierter String mit visueller Beschreibung oder "" bei Fehler/irrelevant
+        
+        Note:
+            - 3 Retry-Versuche bei Rate Limit (2s sleep)
+            - Returns "" wenn LLM "KEINE_RELEVANTEN_DATEN" antwortet
+            - Max 600 Tokens pro Beschreibung
+        """
         if not self.client: return ""
         for attempt in range(3):
             try:
@@ -122,8 +189,47 @@ class ReportLoader:
             except Exception: return ""
         return ""
 
-    def load(self, use_cache: bool = True, progress_callback: Callable = None) -> List[Dict]:
-        # ... (Unverändert, siehe vorheriger Code) ...
+    def load(self, use_cache: bool = True, progress_callback: Optional[Callable] = None) -> List[Dict]:
+        """
+        Lädt und verarbeitet das PDF-Dokument.
+        
+        Workflow:
+        1. Check Cache (wenn use_cache=True)
+        2. Layout-Analyse mit pymupdf4llm
+        3. Seiten-Bilder extrahieren
+        4. Parallel Vision API Calls (max 2 workers)
+        5. Kombiniere Text + Vision
+        6. Cache Results als JSON
+        
+        Args:
+            use_cache: Wenn True, nutze gecachte Daten falls vorhanden
+            progress_callback: Optional callback(progress: float, message: str)
+        
+        Returns:
+            Liste von Chunks (Seiten):
+            [
+                {
+                    "text": str,  # Kombiniert: Layout-Text + Vision
+                    "metadata": {
+                        "page": int,  # 1-basiert
+                        "source": str,  # Dateiname
+                        "len": int,  # Text-Länge
+                        "image_path": str  # Pfad zum PNG
+                    }
+                },
+                ...
+            ]
+        
+        Note:
+            - Parallel Processing für Vision (2x speedup)
+            - Rate Limit Protection (0.5s delay + retry logic)
+            - Cache unter data/processed/{filename}/data.json
+        
+        Example:
+            >>> loader = ReportLoader("report.pdf", max_pages=10)
+            >>> chunks = loader.load(use_cache=True)
+            >>> print(f"Loaded {len(chunks)} pages")
+        """
         if use_cache and os.path.exists(self.json_path):
             if progress_callback: progress_callback(1.0, "Daten aus Cache geladen!")
             with open(self.json_path, "r", encoding="utf-8") as f: return json.load(f)
@@ -196,7 +302,19 @@ class ReportLoader:
         return final_chunks
 
     def _process_page_vision(self, img_data: Dict) -> str:
-        """Wrapper for parallel execution"""
+        """
+        Wrapper für parallele Vision API Verarbeitung.
+        
+        Args:
+            img_data: Dict mit page_num, base64, text_content, img_path
+        
+        Returns:
+            Vision-Beschreibung als String oder "" bei Fehler
+        
+        Note:
+            - 0.5s delay zur Rate Limit Prevention
+            - Retry bei RateLimitError (2s sleep)
+        """
         if not self.api_ready:
             return ""
         

@@ -3,6 +3,10 @@ import json
 from openai import OpenAI
 from typing import List, Dict, Callable, Optional
 
+# Configuration Constants
+KEYWORD_MATCH_THRESHOLD = 0.3  # Minimum ratio of keyword matches for deep verification (30%)
+MIN_KEYWORD_LENGTH = 5  # Minimum length for keywords to be considered significant
+
 class GreenwashingAnalyzer:
     """
     KI-gestützter Analyzer für Greenwashing-Indikatoren in CSR-Berichten.
@@ -178,7 +182,8 @@ class GreenwashingAnalyzer:
         current_op = 0
 
         for claim in open_claims:
-            keywords = [w for w in claim['text'].split() if len(w) > 5]
+            # FIX BUG 4: Use named constant instead of magic number
+            keywords = [w for w in claim['text'].split() if len(w) > MIN_KEYWORD_LENGTH]
             if not keywords: continue
 
             for chunk in chunks:
@@ -190,7 +195,8 @@ class GreenwashingAnalyzer:
 
                 hits = sum(1 for k in keywords if k.lower() in chunk['text'].lower())
                 
-                if hits / len(keywords) > 0.3:
+                # FIX BUG 4: Use named constant with clear documentation
+                if hits / len(keywords) > KEYWORD_MATCH_THRESHOLD:
                     if progress_callback: progress_callback(current_op / total_ops, f"Deep-Check ID {claim['id']}...")
                     
                     verification = self._verify_claim_with_llm(claim, chunk['text'])

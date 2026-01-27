@@ -226,8 +226,11 @@ with tab1:
                 with c2:
                     st.markdown("### Original Seite")
                     img_path = chunk['metadata'].get('image_path')
-                    if img_path and os.path.exists(img_path): st.image(img_path, use_container_width=True)
-                    else: st.warning("Kein Bild verfügbar.")
+                    # FIX BUG 3: Better validation of image path
+                    if img_path and os.path.isfile(img_path) and os.path.exists(img_path):
+                        st.image(img_path, use_container_width=True)
+                    else:
+                        st.warning("Kein Bild verfügbar.")
 
 # TAB 2: AUDIT (Mit Highlighting!)
 with tab2:
@@ -288,16 +291,19 @@ with tab2:
                     st.rerun()
 
             if st.button("Analyse jetzt starten"):
+                # FIX BUG 1: Better validation and filtering of incomplete tags
                 incomplete_tags = [
                     t for t in st.session_state.custom_tags
-                    if not t.get("tag") or not t.get("definition")
+                    if not t.get("tag", "").strip() or not t.get("definition", "").strip()
                 ]
                 if incomplete_tags:
                     st.warning(f"⚠️ {len(incomplete_tags)} Tag(s) sind unvollständig und werden ignoriert.")
+                
+                # Only include complete tags with non-empty values
                 custom_defs = {
-                    tag_config["tag"]: tag_config["definition"] 
+                    tag_config["tag"].strip(): tag_config["definition"].strip()
                     for tag_config in st.session_state.custom_tags 
-                    if tag_config["tag"] and tag_config["definition"]  # ← Filter vorhanden, aber...
+                    if tag_config.get("tag", "").strip() and tag_config.get("definition", "").strip()
                 }
                 
                 analyzer = GreenwashingAnalyzer(model_name=model_choice)
@@ -348,7 +354,10 @@ with tab2:
                         col_fb1, col_fb2, col_fb3 = st.columns([1, 1, 4])
                         with col_fb1:
                             if st.button("👍 Korrekt", key=f"correct_{finding_id}"):
-                                report_name = st.session_state.chunks[0]['metadata'].get('source', 'unknown')
+                                # FIX BUG 2: Validate chunks exist before accessing
+                                report_name = 'unknown'
+                                if st.session_state.chunks and len(st.session_state.chunks) > 0:
+                                    report_name = st.session_state.chunks[0]['metadata'].get('source', 'unknown')
                                 st.session_state.feedbacks[finding_id] = {
                                     'feedback': 'CORRECT',
                                     'page': f['page'],
@@ -360,7 +369,10 @@ with tab2:
                                 st.rerun()
                         with col_fb2:
                             if st.button("👎 Falsch Positiv", key=f"false_{finding_id}"):
-                                report_name = st.session_state.chunks[0]['metadata'].get('source', 'unknown')
+                                # FIX BUG 2: Validate chunks exist before accessing
+                                report_name = 'unknown'
+                                if st.session_state.chunks and len(st.session_state.chunks) > 0:
+                                    report_name = st.session_state.chunks[0]['metadata'].get('source', 'unknown')
                                 st.session_state.feedbacks[finding_id] = {
                                     'feedback': 'FALSE_POSITIVE',
                                     'page': f['page'],
